@@ -8,32 +8,43 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 
 load_dotenv()
 
+# ---------------- CONFIG ----------------
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+
 PDF_PATH = "data/company.pdf"
 VECTOR_PATH = "data/faiss_index"
 
-st.set_page_config(page_title="Admin • Company Chatbot", page_icon="🔐")
+st.set_page_config(
+    page_title="Admin Panel • Company AI",
+    page_icon="🔐"
+)
+
 st.title("🔐 Admin Panel")
 
-# -------- Auth --------
+# ---------------- AUTH ----------------
 if "admin_auth" not in st.session_state:
     st.session_state.admin_auth = False
 
 if not st.session_state.admin_auth:
-    pwd = st.text_input("Enter Admin Password", type="password")
+    password = st.text_input("Enter Admin Password", type="password")
     if st.button("Login"):
-        if pwd == ADMIN_PASSWORD:
+        if password == ADMIN_PASSWORD:
             st.session_state.admin_auth = True
-            st.success("Logged in")
+            st.success("Login successful")
         else:
             st.error("Invalid password")
     st.stop()
 
-# -------- Upload --------
-st.subheader("📄 Upload / Replace Company PDF")
-uploaded = st.file_uploader("Upload company profile (PDF)", type=["pdf"])
+# ---------------- PDF UPLOAD ----------------
+st.subheader("📄 Upload Company PDF")
 
-def build_index(pdf_path: str):
+uploaded = st.file_uploader(
+    "Upload company profile (PDF only)",
+    type=["pdf"]
+)
+
+def build_faiss_index(pdf_path: str):
+    # Ensure directories exist (CRITICAL FOR STREAMLIT CLOUD)
     os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
     os.makedirs(VECTOR_PATH, exist_ok=True)
 
@@ -41,7 +52,8 @@ def build_index(pdf_path: str):
     documents = loader.load()
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000, chunk_overlap=200
+        chunk_size=1000,
+        chunk_overlap=200
     )
     docs = splitter.split_documents(documents)
 
@@ -49,22 +61,29 @@ def build_index(pdf_path: str):
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
-    vs = FAISS.from_documents(docs, embeddings)
-    vs.save_local(VECTOR_PATH)
+    vectorstore = FAISS.from_documents(docs, embeddings)
+    vectorstore.save_local(VECTOR_PATH)
 
 if uploaded:
+    # Ensure data folder exists before saving PDF
+    os.makedirs(os.path.dirname(PDF_PATH), exist_ok=True)
+
     with open(PDF_PATH, "wb") as f:
         f.write(uploaded.read())
-    st.info("PDF saved. Building index…")
 
-    with st.spinner("Building FAISS index…"):
-        build_index(PDF_PATH)
+    st.info("PDF uploaded. Building FAISS index…")
 
-    st.success("Index built successfully!")
+    with st.spinner("Processing document…"):
+        build_faiss_index(PDF_PATH)
 
-# -------- Status --------
-st.subheader("📊 Status")
-idx_faiss = os.path.exists(os.path.join(VECTOR_PATH, "index.faiss"))
-idx_pkl = os.path.exists(os.path.join(VECTOR_PATH, "index.pkl"))
+    st.success("✅ FAISS index built successfully!")
 
-st.write("FAISS index:", "✅ Ready" if idx_faiss and idx_pkl else "❌ Not built yet")
+# ---------------- STATUS ----------------
+st.subheader("📊 System Status")
+
+faiss_ready = (
+    os.path.exists(os.path.join(VECTOR_PATH, "index.faiss")) and
+    os.path.exists(os.path.join(VECTOR_PATH, "index.pkl"))
+)
+
+st.write("FAISS Index:", "✅ Ready" if faiss_ready else "❌ Not available")
